@@ -36,8 +36,12 @@ use log4rs::{
     encode::pattern::PatternEncoder,
     Config,
 };
-#[cfg(feature = "mimalloc")]
-use mimalloc::MiMalloc;
+
+// #[cfg(feature = "mimalloc")]
+// use mimalloc::MiMalloc;
+
+use tikv_jemallocator::Jemalloc;
+
 use once_cell::sync::OnceCell;
 
 pub use data_type::*;
@@ -53,9 +57,12 @@ pub mod execution;
 mod jvm_bridge;
 pub mod parquet;
 
-#[cfg(feature = "mimalloc")]
+// #[cfg(feature = "mimalloc")]
+// #[global_allocator]
+// static GLOBAL: MiMalloc = MiMalloc;
+
 #[global_allocator]
-static GLOBAL: MiMalloc = MiMalloc;
+static GLOBAL: Jemalloc = Jemalloc;
 
 static JAVA_VM: OnceCell<JavaVM> = OnceCell::new();
 
@@ -65,6 +72,8 @@ pub extern "system" fn Java_org_apache_comet_NativeBase_init(
     _: JClass,
     log_conf_path: JString,
 ) {
+    console_subscriber::init();
+
     // Initialize the error handling to capture panic backtraces
     errors::init();
 

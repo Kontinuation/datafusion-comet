@@ -43,8 +43,9 @@ arrow-schema = { workspace = true }
 parquet = { git = "https://github.com/apache/arrow-rs.git", rev = "0a4d8a1", default-features = false, features = ["experimental"] }
 half = { version = "2.4.1", default-features = false }
 futures = "0.3.28"
-mimalloc = { version = "*", default-features = false, optional = true }
-tokio = { version = "1", features = ["rt-multi-thread"] }
+# mimalloc = { version = "*", default-features = false, optional = true }
+tokio = { version = "1", features = ["rt-multi-thread", "tracing"] }
+console-subscriber = "0.4"
 async-trait = "0.1"
 log = "0.4"
 log4rs = "1.2.0"
@@ -78,6 +79,8 @@ crc32fast = "1.3.2"
 simd-adler32 = "0.3.7"
 datafusion-comet-spark-expr = { workspace = true }
 datafusion-comet-proto = { workspace = true }
+#tikv-jemalloc-sys = { version = "0.6", features = ["profiling", "stats"] }
+tikv-jemallocator = { version = "0.6", features = ["profiling", "stats", "disable_initial_exec_tls"] }
 
 [dev-dependencies]
 pprof = { version = "0.13.0", features = ["flamegraph"] }
