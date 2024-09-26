@@ -19,11 +19,13 @@
 
 package org.apache.comet
 
+import java.util.Map
+
 import org.apache.spark._
 import org.apache.spark.sql.comet.CometMetricNode
 import org.apache.spark.sql.vectorized._
 
-import org.apache.comet.CometConf.{COMET_BATCH_SIZE, COMET_BLOCKING_THREADS, COMET_DEBUG_ENABLED, COMET_EXEC_MEMORY_FRACTION, COMET_EXPLAIN_NATIVE_ENABLED, COMET_WORKER_THREADS}
+import org.apache.comet.CometConf.{COMET_BATCH_SIZE, COMET_BLOCKING_THREADS, COMET_DEBUG_ENABLED, COMET_EXEC_MEMORY_FRACTION, COMET_EXEC_MEMORY_POOL_TYPE, COMET_EXPLAIN_NATIVE_ENABLED, COMET_WORKER_THREADS}
 import org.apache.comet.vector.NativeUtil
 
 /**
@@ -53,9 +55,10 @@ class CometExecIterator(
   private val cometBatchIterators = inputs.map { iterator =>
     new CometBatchIterator(iterator, nativeUtil)
   }.toArray
-  private val plan = {
+  private val planWrapper = {
     val configs = createNativeConf
-    nativeLib.createPlan(
+    CometExecIterator.createPlan(
+      nativeLib,
       id,
       configs,
       cometBatchIterators,
@@ -82,6 +85,7 @@ class CometExecIterator(
     result.put(
       "use_unified_memory_manager",
       String.valueOf(conf.get("spark.memory.offHeap.enabled", "false")))
+    result.put("memory_pool_type", String.valueOf(COMET_EXEC_MEMORY_POOL_TYPE.get()))
     result.put("memory_limit", String.valueOf(maxMemory))
     result.put("memory_fraction", String.valueOf(COMET_EXEC_MEMORY_FRACTION.get()))
     result.put("batch_size", String.valueOf(COMET_BATCH_SIZE.get()))
@@ -104,7 +108,7 @@ class CometExecIterator(
     nativeUtil.getNextBatch(
       numOutputCols,
       (arrayAddrs, schemaAddrs) => {
-        nativeLib.executePlan(plan, arrayAddrs, schemaAddrs)
+        nativeLib.executePlan(planWrapper.plan, arrayAddrs, schemaAddrs)
       })
   }
 
@@ -148,7 +152,7 @@ class CometExecIterator(
         currentBatch = null
       }
       nativeUtil.close()
-      nativeLib.releasePlan(plan)
+      planWrapper.close()
 
       // The allocator thoughts the exported ArrowArray and ArrowSchema structs are not released,
       // so it will report:
@@ -171,5 +175,48 @@ class CometExecIterator(
       // allocator.close()
       closed = true
     }
+  }
+}
+
+object CometExecIterator {
+  private val taskMemoryPoolAddressMap = new java.util.concurrent.ConcurrentHashMap[Long, Long]()
+
+  private def createPlan(
+      nativeLib: Native,
+      id: Long,
+      configMap: Map[String, String],
+      iterators: Array[CometBatchIterator],
+      protobufQueryPlan: Array[Byte],
+      metrics: CometMetricNode,
+      taskMemoryManager: CometTaskMemoryManager): CometNativePlanWrapper = {
+    val taskContext = TaskContext.get()
+    val taskAttemptId = taskContext.taskAttemptId()
+    val poolAddress = taskMemoryPoolAddressMap.computeIfAbsent(
+      taskAttemptId,
+      _ => {
+        val poolAddress = nativeLib.createTaskMemoryPool()
+        // scalastyle:off println
+        println(s"[TASK $taskAttemptId] Created memory pool, poolAddress: $poolAddress")
+        taskContext.addTaskCompletionListener[Unit] { _ =>
+          // scalastyle:off println
+          println(s"[TASK $taskAttemptId] Releasing memory pool, poolAddress: $poolAddress")
+          nativeLib.releaseTaskMemoryPool(poolAddress)
+          taskMemoryPoolAddressMap.remove(taskAttemptId)
+        }
+        poolAddress
+      })
+
+    val plan = nativeLib.createPlan(
+      id,
+      configMap,
+      iterators,
+      protobufQueryPlan,
+      metrics,
+      taskMemoryManager)
+    // scalastyle:off println
+    println(s"[TASK $taskAttemptId] Created native plan $plan, poolAddress: $poolAddress")
+    val planWrapper = new CometNativePlanWrapper(plan, nativeLib, taskAttemptId, poolAddress)
+    taskContext.addTaskCompletionListener[Unit](_ => planWrapper.close())
+    planWrapper
   }
 }
