@@ -191,20 +191,31 @@ object CometExecIterator {
       taskMemoryManager: CometTaskMemoryManager): CometNativePlanWrapper = {
     val taskContext = TaskContext.get()
     val taskAttemptId = taskContext.taskAttemptId()
-    val poolAddress = taskMemoryPoolAddressMap.computeIfAbsent(
-      taskAttemptId,
-      _ => {
-        val poolAddress = nativeLib.createTaskMemoryPool()
-        // scalastyle:off println
-        println(s"[TASK $taskAttemptId] Created memory pool, poolAddress: $poolAddress")
-        taskContext.addTaskCompletionListener[Unit] { _ =>
-          // scalastyle:off println
-          println(s"[TASK $taskAttemptId] Releasing memory pool, poolAddress: $poolAddress")
-          nativeLib.releaseTaskMemoryPool(poolAddress)
-          taskMemoryPoolAddressMap.remove(taskAttemptId)
-        }
-        poolAddress
-      })
+
+    val poolAddress =
+      if (!configMap.get("use_unified_memory_manager").toBoolean && configMap.get(
+          "memory_pool_type") == "fair_spill_shared") {
+        taskMemoryPoolAddressMap.computeIfAbsent(
+          taskAttemptId,
+          _ => {
+            val memoryLimit = configMap.get("memory_limit").toLong
+            val memoryFraction = configMap.get("memory_fraction").toDouble
+            val poolAddress = nativeLib.createTaskMemoryPool(memoryLimit, memoryFraction)
+            // scalastyle:off println
+            println(
+              s"[TASK $taskAttemptId] Created memory pool, memoryLimit: $memoryLimit, " +
+                s"memoryFraction: $memoryFraction, poolAddress: $poolAddress")
+            taskContext.addTaskCompletionListener[Unit] { _ =>
+              // scalastyle:off println
+              println(s"[TASK $taskAttemptId] Releasing memory pool, poolAddress: $poolAddress")
+              nativeLib.releaseTaskMemoryPool(poolAddress)
+              taskMemoryPoolAddressMap.remove(taskAttemptId)
+            }
+            poolAddress
+          })
+      } else {
+        0
+      }
 
     val plan = nativeLib.createPlan(
       id,
@@ -212,7 +223,8 @@ object CometExecIterator {
       iterators,
       protobufQueryPlan,
       metrics,
-      taskMemoryManager)
+      taskMemoryManager,
+      poolAddress)
     // scalastyle:off println
     println(s"[TASK $taskAttemptId] Created native plan $plan, poolAddress: $poolAddress")
     val planWrapper = new CometNativePlanWrapper(plan, nativeLib, taskAttemptId, poolAddress)
