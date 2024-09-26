@@ -136,7 +136,7 @@ public final class CometDiskBlockWriter {
       int asyncThreadNum,
       ExecutorService threadPool) {
     this.allocator =
-        CometShuffleMemoryAllocator.getInstance(
+        new CometShuffleMemoryAllocator(
             conf,
             taskMemoryManager,
             Math.min(MAXIMUM_PAGE_SIZE_BYTES, taskMemoryManager.pageSizeBytes()));
@@ -318,6 +318,8 @@ public final class CometDiskBlockWriter {
     synchronized (currentWriters) {
       currentWriters.remove(this);
     }
+
+    allocator.checkLeaks();
 
     return new FileSegment(file, 0, totalWritten);
   }

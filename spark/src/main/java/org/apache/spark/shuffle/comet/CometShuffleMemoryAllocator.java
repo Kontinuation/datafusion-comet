@@ -62,18 +62,8 @@ public final class CometShuffleMemoryAllocator extends MemoryConsumer {
   private static final int OFFSET_BITS = 51;
   private static final long MASK_LONG_LOWER_51_BITS = 0x7FFFFFFFFFFFFL;
 
-  private static CometShuffleMemoryAllocator INSTANCE;
-
-  public static synchronized CometShuffleMemoryAllocator getInstance(
+  public CometShuffleMemoryAllocator(
       SparkConf conf, TaskMemoryManager taskMemoryManager, long pageSize) {
-    if (INSTANCE == null) {
-      INSTANCE = new CometShuffleMemoryAllocator(conf, taskMemoryManager, pageSize);
-    }
-
-    return INSTANCE;
-  }
-
-  CometShuffleMemoryAllocator(SparkConf conf, TaskMemoryManager taskMemoryManager, long pageSize) {
     super(taskMemoryManager, pageSize, MemoryMode.OFF_HEAP);
     this.pageSize = pageSize;
     this.totalMemory =
@@ -197,5 +187,11 @@ public final class CometShuffleMemoryAllocator extends MemoryConsumer {
 
   public long encodePageNumberAndOffset(MemoryBlock page, long offsetInPage) {
     return encodePageNumberAndOffset(page.pageNumber, offsetInPage - page.getBaseOffset());
+  }
+
+  public void checkLeaks() {
+    if (allocatedMemory > 0) {
+      throw new IllegalStateException("Leaking memory: " + allocatedMemory + " bytes");
+    }
   }
 }
