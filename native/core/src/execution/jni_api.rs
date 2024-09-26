@@ -103,6 +103,7 @@ pub unsafe extern "system" fn Java_org_apache_comet_Native_createPlan(
     serialized_query: jbyteArray,
     metrics_node: JObject,
     comet_task_memory_manager_obj: JObject,
+    memory_pool_address: jlong,
 ) -> jlong {
     try_unwrap_or_throw(&e, |mut env| {
         // Init JVM classes
@@ -164,7 +165,8 @@ pub unsafe extern "system" fn Java_org_apache_comet_Native_createPlan(
         // We need to keep the session context alive. Some session state like temporary
         // dictionaries are stored in session context. If it is dropped, the temporary
         // dictionaries will be dropped as well.
-        let session = prepare_datafusion_session_context(&configs, task_memory_manager)?;
+        let session =
+            prepare_datafusion_session_context(&configs, task_memory_manager, memory_pool_address)?;
 
         let exec_context = Box::new(ExecutionContext {
             id,
@@ -189,6 +191,7 @@ pub unsafe extern "system" fn Java_org_apache_comet_Native_createPlan(
 fn prepare_datafusion_session_context(
     conf: &HashMap<String, String>,
     comet_task_memory_manager: Arc<GlobalRef>,
+    memory_pool_address: jlong,
 ) -> CometResult<SessionContext> {
     // Get the batch size from Comet JVM side
     let batch_size = conf
@@ -209,6 +212,18 @@ fn prepare_datafusion_session_context(
         println!("Using unified memory manager");
         let memory_pool = CometMemoryPool::new(comet_task_memory_manager);
         rt_config = rt_config.with_memory_pool(Arc::new(memory_pool));
+    } else if memory_pool_address != 0 {
+        // Use the memory pool from Comet JVM side
+        println!(
+            "Using task-level shared memory pool, address: {}",
+            memory_pool_address
+        );
+        let memory_pool = unsafe {
+            let pool = memory_pool_address as *mut Arc<TrackConsumersPool<FairSpillPool>>;
+            Box::from_raw(pool)
+        };
+        let memory_pool_arc = Arc::clone(Box::leak(memory_pool));
+        rt_config = rt_config.with_memory_pool(memory_pool_arc);
     } else {
         // Use the memory pool from DF
         if conf.contains_key("memory_limit") {
@@ -582,6 +597,44 @@ pub extern "system" fn Java_org_apache_comet_Native_sortRowPartitionsNative(
         let array = unsafe { std::slice::from_raw_parts_mut(address as *mut i64, size as usize) };
         array.rdxsort();
 
+        Ok(())
+    })
+}
+
+#[no_mangle]
+pub extern "system" fn Java_org_apache_comet_Native_createTaskMemoryPool(
+    e: JNIEnv,
+    _class: JClass,
+    memory_limit: jlong,
+    memory_fraction: jdouble,
+) -> jlong {
+    try_unwrap_or_throw(&e, |_| {
+        let pool_size = (memory_limit as f64 * memory_fraction) as usize;
+        let memory_pool = Box::new(Arc::new(TrackConsumersPool::new(
+            FairSpillPool::new(pool_size),
+            NonZeroUsize::new(10).unwrap(),
+        )));
+        Ok(Box::into_raw(memory_pool) as jlong)
+    })
+}
+
+#[no_mangle]
+pub extern "system" fn Java_org_apache_comet_Native_releaseTaskMemoryPool(
+    e: JNIEnv,
+    _class: JClass,
+    pool_address: jlong,
+) {
+    try_unwrap_or_throw(&e, |_| unsafe {
+        let mut memory_pool =
+            Box::from_raw(pool_address as *mut Arc<TrackConsumersPool<FairSpillPool>>);
+        let pool = memory_pool.as_mut();
+        let strong_count = Arc::strong_count(pool);
+        if strong_count != 1 {
+            return Err(CometError::Internal(format!(
+                "Leak detected: memory pool has {} strong references",
+                strong_count
+            )));
+        }
         Ok(())
     })
 }

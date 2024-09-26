@@ -21,8 +21,6 @@ package org.apache.comet
 
 import java.util.Map
 
-import scala.util.Random
-
 import org.apache.spark.CometTaskMemoryManager
 import org.apache.spark.sql.comet.CometMetricNode
 
@@ -44,6 +42,8 @@ class Native extends NativeBase {
    * @param taskMemoryManager
    *   the task-level memory manager that is responsible for tracking memory usage across JVM and
    *   native side.
+   * @param memoryPoolAddress
+   *   the address of the task-level memory pool.
    * @return
    *   the address to native query plan.
    */
@@ -53,7 +53,8 @@ class Native extends NativeBase {
       iterators: Array[CometBatchIterator],
       plan: Array[Byte],
       metrics: CometMetricNode,
-      taskMemoryManager: CometTaskMemoryManager): Long
+      taskMemoryManager: CometTaskMemoryManager,
+      memoryPoolAddress: Long): Long
 
   /**
    * Execute a native query plan based on given input Arrow arrays.
@@ -126,9 +127,21 @@ class Native extends NativeBase {
    */
   @native def sortRowPartitionsNative(addr: Long, size: Long): Unit
 
-  def createTaskMemoryPool(): Long = {
-    Random.nextLong()
-  }
+  /**
+   * Create a task-level datafusion memory pool.
+   * @param memoryLimit
+   *   the memory limit of the memory pool.
+   * @param memoryFraction
+   *   the fraction of reservable memory in the memory pool.
+   * @return
+   *   the address of the memory pool.
+   */
+  @native def createTaskMemoryPool(memoryLimit: Long, memoryFraction: Double): Long
 
-  def releaseTaskMemoryPool(addr: Long): Unit = {}
+  /**
+   * Release the task-level datafusion memory pool.
+   * @param addr
+   *   the address of the memory pool.
+   */
+  @native def releaseTaskMemoryPool(addr: Long): Unit
 }
