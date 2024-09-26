@@ -17,6 +17,7 @@
 
 //! Define JNI APIs which can be called from Java/Scala.
 
+use super::{serde, utils::SparkArrowConvert, CometMemoryPool};
 use arrow::datatypes::DataType as ArrowDataType;
 use arrow_array::RecordBatch;
 use datafusion::{
@@ -37,9 +38,8 @@ use jni::{
     sys::{jbyteArray, jint, jlong, jlongArray},
     JNIEnv,
 };
+use std::num::NonZeroUsize;
 use std::{collections::HashMap, sync::Arc, task::Poll};
-
-use super::{serde, utils::SparkArrowConvert, CometMemoryPool};
 
 use crate::{
     errors::{try_unwrap_or_throw, CometError, CometResult},
@@ -51,6 +51,7 @@ use crate::{
 };
 use datafusion_comet_proto::spark_operator::Operator;
 use datafusion_common::ScalarValue;
+use datafusion_execution::memory_pool::{FairSpillPool, TrackConsumersPool};
 use futures::stream::StreamExt;
 use jni::{
     objects::GlobalRef,
@@ -205,6 +206,7 @@ fn prepare_datafusion_session_context(
 
     if use_unified_memory_manager {
         // Set Comet memory pool for native
+        println!("Using unified memory manager");
         let memory_pool = CometMemoryPool::new(comet_task_memory_manager);
         rt_config = rt_config.with_memory_pool(Arc::new(memory_pool));
     } else {
@@ -217,7 +219,26 @@ fn prepare_datafusion_session_context(
                     "Config 'memory_fraction' is not specified from Comet JVM side".to_string(),
                 ))?
                 .parse::<f64>()?;
-            rt_config = rt_config.with_memory_limit(memory_limit, memory_fraction)
+            let default_memory_pool_type = String::from("none");
+            let memory_pool_type = conf
+                .get("memory_pool_type")
+                .unwrap_or(&default_memory_pool_type);
+            if memory_pool_type == "fair_spill" {
+                let pool_size = (memory_limit as f64 * memory_fraction) as usize;
+                println!("Using FairSpillPool, pool size: {pool_size}");
+                rt_config = rt_config.with_memory_pool(Arc::new(TrackConsumersPool::new(
+                    FairSpillPool::new(pool_size),
+                    NonZeroUsize::new(10).unwrap(),
+                )));
+            } else if memory_pool_type == "greedy" {
+                println!("Using GreedyMemoryPool, memory limit: {memory_limit}, memory fraction: {memory_fraction}");
+                rt_config = rt_config.with_memory_limit(memory_limit, memory_fraction);
+            } else {
+                return Err(CometError::Config(format!(
+                    "Unsupported memory pool type: {}",
+                    memory_pool_type
+                )));
+            }
         }
     }
 

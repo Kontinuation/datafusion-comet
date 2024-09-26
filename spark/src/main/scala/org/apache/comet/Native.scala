@@ -21,6 +21,8 @@ package org.apache.comet
 
 import java.util.Map
 
+import scala.util.Random
+
 import org.apache.spark.CometTaskMemoryManager
 import org.apache.spark.sql.comet.CometMetricNode
 
@@ -123,4 +125,10 @@ class Native extends NativeBase {
    *   the size of the array.
    */
   @native def sortRowPartitionsNative(addr: Long, size: Long): Unit
+
+  def createTaskMemoryPool(): Long = {
+    Random.nextLong()
+  }
+
+  def releaseTaskMemoryPool(addr: Long): Unit = {}
 }
