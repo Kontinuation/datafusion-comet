@@ -209,15 +209,10 @@ fn prepare_datafusion_session_context(
 
     if use_unified_memory_manager {
         // Set Comet memory pool for native
-        println!("Using unified memory manager");
         let memory_pool = CometMemoryPool::new(comet_task_memory_manager);
         rt_config = rt_config.with_memory_pool(Arc::new(memory_pool));
     } else if memory_pool_address != 0 {
         // Use the memory pool from Comet JVM side
-        println!(
-            "Using task-level shared memory pool, address: {}",
-            memory_pool_address
-        );
         let memory_pool = unsafe {
             let pool = memory_pool_address as *mut Arc<TrackConsumersPool<FairSpillPool>>;
             Box::from_raw(pool)
@@ -240,13 +235,11 @@ fn prepare_datafusion_session_context(
                 .unwrap_or(&default_memory_pool_type);
             if memory_pool_type == "fair_spill" {
                 let pool_size = (memory_limit as f64 * memory_fraction) as usize;
-                println!("Using FairSpillPool, pool size: {pool_size}");
                 rt_config = rt_config.with_memory_pool(Arc::new(TrackConsumersPool::new(
                     FairSpillPool::new(pool_size),
                     NonZeroUsize::new(10).unwrap(),
                 )));
             } else if memory_pool_type == "greedy" {
-                println!("Using GreedyMemoryPool, memory limit: {memory_limit}, memory fraction: {memory_fraction}");
                 rt_config = rt_config.with_memory_limit(memory_limit, memory_fraction);
             } else {
                 return Err(CometError::Config(format!(

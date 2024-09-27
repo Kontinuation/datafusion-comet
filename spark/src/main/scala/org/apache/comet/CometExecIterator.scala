@@ -201,13 +201,7 @@ object CometExecIterator {
             val memoryLimit = configMap.get("memory_limit").toLong
             val memoryFraction = configMap.get("memory_fraction").toDouble
             val poolAddress = nativeLib.createTaskMemoryPool(memoryLimit, memoryFraction)
-            // scalastyle:off println
-            println(
-              s"[TASK $taskAttemptId] Created memory pool, memoryLimit: $memoryLimit, " +
-                s"memoryFraction: $memoryFraction, poolAddress: $poolAddress")
             taskContext.addTaskCompletionListener[Unit] { _ =>
-              // scalastyle:off println
-              println(s"[TASK $taskAttemptId] Releasing memory pool, poolAddress: $poolAddress")
               nativeLib.releaseTaskMemoryPool(poolAddress)
               taskMemoryPoolAddressMap.remove(taskAttemptId)
             }
@@ -225,8 +219,6 @@ object CometExecIterator {
       metrics,
       taskMemoryManager,
       poolAddress)
-    // scalastyle:off println
-    println(s"[TASK $taskAttemptId] Created native plan $plan, poolAddress: $poolAddress")
     val planWrapper = new CometNativePlanWrapper(plan, nativeLib, taskAttemptId, poolAddress)
     taskContext.addTaskCompletionListener[Unit](_ => planWrapper.close())
     planWrapper
