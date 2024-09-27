@@ -32,8 +32,6 @@ class CometNativePlanWrapper(
 
   def close(): Unit = {
     if (!isClosed) {
-      // scalastyle:off println
-      println(s"[TASK $taskAttemptId] Release native plan $plan, poolAddress: $poolAddress")
       native.releasePlan(plan)
       isClosed = true
     }

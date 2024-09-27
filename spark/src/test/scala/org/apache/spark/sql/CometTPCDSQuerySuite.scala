@@ -174,6 +174,8 @@ class CometTPCDSQuerySuite
       override val tpcdsQueries: Seq[String] = tpcdsAllQueries
 
       override val tpcdsQueriesV2_7_0: Seq[String] = tpcdsAllQueriesV2_7_0
+
+      private val useOffHeapMemory = sys.env.get("USE_OFFHEAP_MEMORY")
     }
     with CometTPCDSQueryTestSuite
     with ShimCometTPCDSQuerySuite {
@@ -188,8 +190,10 @@ class CometTPCDSQuerySuite
     conf.set(CometConf.COMET_EXEC_SHUFFLE_ENABLED.key, "true")
     conf.set(CometConf.COMET_MEMORY_OVERHEAD.key, "15g")
     conf.set("spark.sql.adaptive.coalescePartitions.enabled", "true")
-    conf.set(MEMORY_OFFHEAP_ENABLED.key, "true")
-    conf.set(MEMORY_OFFHEAP_SIZE.key, "15g")
+    if (useOffHeapMemory.getOrElse("false").toBoolean) {
+      conf.set(MEMORY_OFFHEAP_ENABLED.key, "true")
+      conf.set(MEMORY_OFFHEAP_SIZE.key, "15g")
+    }
     conf
   }
 
