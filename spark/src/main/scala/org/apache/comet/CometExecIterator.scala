@@ -55,7 +55,7 @@ class CometExecIterator(
   private val cometBatchIterators = inputs.map { iterator =>
     new CometBatchIterator(iterator, nativeUtil)
   }.toArray
-  private val planWrapper = {
+  private val plan = {
     val configs = createNativeConf
     CometExecIterator.createPlan(
       nativeLib,
@@ -108,7 +108,7 @@ class CometExecIterator(
     nativeUtil.getNextBatch(
       numOutputCols,
       (arrayAddrs, schemaAddrs) => {
-        nativeLib.executePlan(planWrapper.plan, arrayAddrs, schemaAddrs)
+        nativeLib.executePlan(plan, arrayAddrs, schemaAddrs)
       })
   }
 
@@ -152,7 +152,7 @@ class CometExecIterator(
         currentBatch = null
       }
       nativeUtil.close()
-      planWrapper.close()
+      nativeLib.releasePlan(plan)
 
       // The allocator thoughts the exported ArrowArray and ArrowSchema structs are not released,
       // so it will report:
@@ -188,7 +188,7 @@ object CometExecIterator {
       iterators: Array[CometBatchIterator],
       protobufQueryPlan: Array[Byte],
       metrics: CometMetricNode,
-      taskMemoryManager: CometTaskMemoryManager): CometNativePlanWrapper = {
+      taskMemoryManager: CometTaskMemoryManager): Long = {
     val taskContext = TaskContext.get()
     val taskAttemptId = taskContext.taskAttemptId()
 
@@ -211,7 +211,7 @@ object CometExecIterator {
         0
       }
 
-    val plan = nativeLib.createPlan(
+    nativeLib.createPlan(
       id,
       configMap,
       iterators,
@@ -219,8 +219,5 @@ object CometExecIterator {
       metrics,
       taskMemoryManager,
       poolAddress)
-    val planWrapper = new CometNativePlanWrapper(plan, nativeLib, taskAttemptId, poolAddress)
-    taskContext.addTaskCompletionListener[Unit](_ => planWrapper.close())
-    planWrapper
   }
 }
