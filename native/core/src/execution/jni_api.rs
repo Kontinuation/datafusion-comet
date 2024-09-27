@@ -629,16 +629,7 @@ pub extern "system" fn Java_org_apache_comet_Native_releaseTaskMemoryPool(
     pool_address: jlong,
 ) {
     try_unwrap_or_throw(&e, |_| unsafe {
-        let mut memory_pool =
-            Box::from_raw(pool_address as *mut Arc<TrackConsumersPool<FairSpillPool>>);
-        let pool = memory_pool.as_mut();
-        let strong_count = Arc::strong_count(pool);
-        if strong_count != 1 {
-            return Err(CometError::Internal(format!(
-                "Leak detected: memory pool has {} strong references",
-                strong_count
-            )));
-        }
+        let _ = Box::from_raw(pool_address as *mut Arc<TrackConsumersPool<FairSpillPool>>);
         Ok(())
     })
 }
