@@ -51,7 +51,7 @@ use crate::{
 };
 use datafusion_comet_proto::spark_operator::Operator;
 use datafusion_common::ScalarValue;
-use datafusion_execution::memory_pool::{FairSpillPool, TrackConsumersPool};
+use datafusion_execution::memory_pool::{FairSpillPool, MemoryPool, TrackConsumersPool};
 use futures::stream::StreamExt;
 use jni::{
     objects::GlobalRef,
@@ -61,6 +61,7 @@ use tokio::runtime::Runtime;
 
 use crate::execution::operators::ScanExec;
 use log::info;
+use once_cell::sync::OnceCell;
 
 /// Comet native execution context. Kept alive across JNI calls.
 struct ExecutionContext {
@@ -229,12 +230,22 @@ fn prepare_datafusion_session_context(
                     "Config 'memory_fraction' is not specified from Comet JVM side".to_string(),
                 ))?
                 .parse::<f64>()?;
+            let pool_size = (memory_limit as f64 * memory_fraction) as usize;
+
             let default_memory_pool_type = String::from("none");
             let memory_pool_type = conf
                 .get("memory_pool_type")
                 .unwrap_or(&default_memory_pool_type);
-            if memory_pool_type == "fair_spill" {
-                let pool_size = (memory_limit as f64 * memory_fraction) as usize;
+            if memory_pool_type == "fair_spill_global" {
+                static GLOBAL_MEMORY_POOL: OnceCell<Arc<dyn MemoryPool>> = OnceCell::new();
+                let memory_pool = GLOBAL_MEMORY_POOL.get_or_init(|| {
+                    Arc::new(TrackConsumersPool::new(
+                        FairSpillPool::new(pool_size),
+                        NonZeroUsize::new(10).unwrap(),
+                    ))
+                });
+                rt_config = rt_config.with_memory_pool(Arc::clone(memory_pool));
+            } else if memory_pool_type == "fair_spill" {
                 rt_config = rt_config.with_memory_pool(Arc::new(TrackConsumersPool::new(
                     FairSpillPool::new(pool_size),
                     NonZeroUsize::new(10).unwrap(),
