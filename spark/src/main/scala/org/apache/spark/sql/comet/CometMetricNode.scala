@@ -117,11 +117,11 @@ object CometMetricNode {
   def sortMergeJoinMetrics(sc: SparkContext): Map[String, SQLMetric] = {
     Map(
       "peak_mem_used" ->
-        SQLMetrics.createSizeMetric(sc, "Memory used by build-side"),
+        SQLMetrics.createSizeMetric(sc, "Memory used by sort-merge-join"),
       "input_batches" ->
-        SQLMetrics.createMetric(sc, "Number of batches consumed by probe-side"),
+        SQLMetrics.createMetric(sc, "Number of input batches"),
       "input_rows" ->
-        SQLMetrics.createMetric(sc, "Number of rows consumed by probe-side"),
+        SQLMetrics.createMetric(sc, "Number of input rows"),
       "output_batches" -> SQLMetrics.createMetric(sc, "Number of batches produced"),
       "output_rows" -> SQLMetrics.createMetric(sc, "Number of rows produced"),
       "join_time" -> SQLMetrics.createNanoTimingMetric(sc, "Total time for joining"),

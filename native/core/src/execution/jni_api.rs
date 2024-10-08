@@ -51,7 +51,9 @@ use crate::{
 };
 use datafusion_comet_proto::spark_operator::Operator;
 use datafusion_common::ScalarValue;
-use datafusion_execution::memory_pool::{FairSpillPool, MemoryPool, TrackConsumersPool};
+use datafusion_execution::memory_pool::{
+    FairSpillPool, GreedyMemoryPool, MemoryPool, TrackConsumersPool,
+};
 use futures::stream::StreamExt;
 use jni::{
     objects::GlobalRef,
@@ -67,6 +69,10 @@ use once_cell::sync::OnceCell;
 struct ExecutionContext {
     /// The id of the execution context.
     pub id: i64,
+    /// The stage id of the spark job
+    pub stage_id: i64,
+    /// The task attempt id of this spark task
+    pub task_attempt_id: i64,
     /// The deserialized Spark plan
     pub spark_plan: Operator,
     /// The DataFusion root operator converted from the `spark_plan`
@@ -130,6 +136,18 @@ pub unsafe extern "system" fn Java_org_apache_comet_Native_createPlan(
         // Whether we've enabled additional debugging on the native side
         let debug_native = parse_bool(&configs, "debug_native")?;
         let explain_native = parse_bool(&configs, "explain_native")?;
+        let stage_id = configs
+            .get("stage_id")
+            .map(String::as_str)
+            .unwrap_or("0")
+            .parse()
+            .unwrap();
+        let task_attempt_id = configs
+            .get("task_attempt_id")
+            .map(String::as_str)
+            .unwrap_or("0")
+            .parse()
+            .unwrap();
 
         let worker_threads = configs
             .get("worker_threads")
@@ -171,6 +189,8 @@ pub unsafe extern "system" fn Java_org_apache_comet_Native_createPlan(
 
         let exec_context = Box::new(ExecutionContext {
             id,
+            stage_id,
+            task_attempt_id,
             spark_plan,
             root_op: None,
             scans: vec![],
@@ -237,10 +257,19 @@ fn prepare_datafusion_session_context(
                 .get("memory_pool_type")
                 .unwrap_or(&default_memory_pool_type);
             if memory_pool_type == "fair_spill_global" {
-                static GLOBAL_MEMORY_POOL: OnceCell<Arc<dyn MemoryPool>> = OnceCell::new();
-                let memory_pool = GLOBAL_MEMORY_POOL.get_or_init(|| {
+                static GLOBAL_MEMORY_POOL_FAIR: OnceCell<Arc<dyn MemoryPool>> = OnceCell::new();
+                let memory_pool = GLOBAL_MEMORY_POOL_FAIR.get_or_init(|| {
                     Arc::new(TrackConsumersPool::new(
                         FairSpillPool::new(pool_size),
+                        NonZeroUsize::new(10).unwrap(),
+                    ))
+                });
+                rt_config = rt_config.with_memory_pool(Arc::clone(memory_pool));
+            } else if memory_pool_type == "greedy_global" {
+                static GLOBAL_MEMORY_POOL_GREEDY: OnceCell<Arc<dyn MemoryPool>> = OnceCell::new();
+                let memory_pool = GLOBAL_MEMORY_POOL_GREEDY.get_or_init(|| {
+                    Arc::new(TrackConsumersPool::new(
+                        GreedyMemoryPool::new(pool_size),
                         NonZeroUsize::new(10).unwrap(),
                     ))
                 });
@@ -403,7 +432,9 @@ pub unsafe extern "system" fn Java_org_apache_comet_Native_executePlan(
             if exec_context.explain_native {
                 let formatted_plan_str =
                     DisplayableExecutionPlan::new(root_op.as_ref()).indent(true);
-                info!("Comet native query plan:\n {formatted_plan_str:}");
+                let stage_id = exec_context.stage_id;
+                let task_attempt_id = exec_context.task_attempt_id;
+                info!("Comet native query plan (stage: {stage_id} task: {task_attempt_id}):\n {formatted_plan_str:}");
             }
 
             let task_ctx = exec_context.session_ctx.task_ctx();
@@ -443,7 +474,9 @@ pub unsafe extern "system" fn Java_org_apache_comet_Native_executePlan(
                         if let Some(plan) = &exec_context.root_op {
                             let formatted_plan_str =
                                 DisplayableExecutionPlan::with_metrics(plan.as_ref()).indent(true);
-                            info!("Comet native query plan with metrics:\n{formatted_plan_str:}");
+                            let stage_id = exec_context.stage_id;
+                            let task_attempt_id = exec_context.task_attempt_id;
+                            info!("Comet native query plan with metrics (stage: {stage_id} task: {task_attempt_id}):\n{formatted_plan_str:}");
                         }
                     }
 

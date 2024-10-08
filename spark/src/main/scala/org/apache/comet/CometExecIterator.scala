@@ -94,6 +94,12 @@ class CometExecIterator(
     result.put("worker_threads", String.valueOf(COMET_WORKER_THREADS.get()))
     result.put("blocking_threads", String.valueOf(COMET_BLOCKING_THREADS.get()))
 
+    val taskContext = TaskContext.get()
+    val stageId = taskContext.stageId()
+    val taskAttemptId = taskContext.taskAttemptId()
+    result.put("stage_id", String.valueOf(stageId))
+    result.put("task_attempt_id", String.valueOf(taskAttemptId))
+
     // Strip mandatory prefix spark. which is not required for DataFusion session params
     conf.getAll.foreach {
       case (k, v) if k.startsWith("spark.datafusion") =>
