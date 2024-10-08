@@ -51,7 +51,9 @@ use crate::{
 };
 use datafusion_comet_proto::spark_operator::Operator;
 use datafusion_common::ScalarValue;
-use datafusion_execution::memory_pool::{FairSpillPool, MemoryPool, TrackConsumersPool};
+use datafusion_execution::memory_pool::{
+    FairSpillPool, GreedyMemoryPool, MemoryPool, TrackConsumersPool,
+};
 use futures::stream::StreamExt;
 use jni::{
     objects::GlobalRef,
@@ -237,10 +239,19 @@ fn prepare_datafusion_session_context(
                 .get("memory_pool_type")
                 .unwrap_or(&default_memory_pool_type);
             if memory_pool_type == "fair_spill_global" {
-                static GLOBAL_MEMORY_POOL: OnceCell<Arc<dyn MemoryPool>> = OnceCell::new();
-                let memory_pool = GLOBAL_MEMORY_POOL.get_or_init(|| {
+                static GLOBAL_MEMORY_POOL_FAIR: OnceCell<Arc<dyn MemoryPool>> = OnceCell::new();
+                let memory_pool = GLOBAL_MEMORY_POOL_FAIR.get_or_init(|| {
                     Arc::new(TrackConsumersPool::new(
                         FairSpillPool::new(pool_size),
+                        NonZeroUsize::new(10).unwrap(),
+                    ))
+                });
+                rt_config = rt_config.with_memory_pool(Arc::clone(memory_pool));
+            } else if memory_pool_type == "greedy_global" {
+                static GLOBAL_MEMORY_POOL_GREEDY: OnceCell<Arc<dyn MemoryPool>> = OnceCell::new();
+                let memory_pool = GLOBAL_MEMORY_POOL_GREEDY.get_or_init(|| {
+                    Arc::new(TrackConsumersPool::new(
+                        GreedyMemoryPool::new(pool_size),
                         NonZeroUsize::new(10).unwrap(),
                     ))
                 });

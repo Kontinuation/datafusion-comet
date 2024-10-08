@@ -434,8 +434,9 @@ object CometConf extends ShimCometConf {
   val COMET_EXEC_MEMORY_POOL_TYPE: ConfigEntry[String] = conf("spark.comet.exec.memoryPool")
     .doc(
       "The type of memory pool to be used for Comet native execution. " +
-        "Available memory pool types are 'fair_spill_global', 'fair_spill_shared', 'greedy' " +
-        "and 'fair_spill'. By default, this config is 'fair_spill_shared'.")
+        "Available memory pool types are 'fair_spill_global', 'greedy_global', " +
+        "'fair_spill_shared', 'greedy' and 'fair_spill'. By default, this config is " +
+        "'fair_spill_shared'.")
     .stringConf
     .createWithDefault("fair_spill_shared")
 
