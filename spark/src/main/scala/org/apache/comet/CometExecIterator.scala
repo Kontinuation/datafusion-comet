@@ -82,10 +82,17 @@ class CometExecIterator(
     // Only enable unified memory manager when off-heap mode is enabled. Otherwise,
     // we'll use the built-in memory pool from DF, and initializes with `memory_limit`
     // and `memory_fraction` below.
-    result.put(
-      "use_unified_memory_manager",
-      String.valueOf(conf.get("spark.memory.offHeap.enabled", "false")))
+    val offHeapEnabled = conf.get("spark.memory.offHeap.enabled", "false").toBoolean
+    result.put("use_unified_memory_manager", String.valueOf(offHeapEnabled))
+    val memPerTask = {
+      val numCores = numDriverOrExecutorCores(conf).toFloat
+      val coresPerTask = conf.get("spark.task.cpus", "1").toFloat
+      // example 16GB maxMemory * 16 cores with 4 cores per task results
+      // in memory_limit_per_task = 16 GB * 4 / 16 = 16 GB / 4 = 4GB
+      maxMemory.toFloat * coresPerTask / numCores
+    }
     result.put("memory_pool_type", String.valueOf(COMET_EXEC_MEMORY_POOL_TYPE.get()))
+    result.put("memory_limit_per_task", String.valueOf(memPerTask.toInt))
     result.put("memory_limit", String.valueOf(maxMemory))
     result.put("memory_fraction", String.valueOf(COMET_EXEC_MEMORY_FRACTION.get()))
     result.put("batch_size", String.valueOf(COMET_BATCH_SIZE.get()))
@@ -102,6 +109,21 @@ class CometExecIterator(
     }
 
     result
+  }
+
+  private def numDriverOrExecutorCores(conf: SparkConf): Int = {
+    def convertToInt(threads: String): Int = {
+      if (threads == "*") Runtime.getRuntime.availableProcessors() else threads.toInt
+    }
+    val LOCAL_N_REGEX = """local\[([0-9]+|\*)\]""".r
+    val LOCAL_N_FAILURES_REGEX = """local\[([0-9]+|\*)\s*,\s*([0-9]+)\]""".r
+    val master = conf.get("spark.master")
+    master match {
+      case "local" => 1
+      case LOCAL_N_REGEX(threads) => convertToInt(threads)
+      case LOCAL_N_FAILURES_REGEX(threads, _) => convertToInt(threads)
+      case _ => conf.get("spark.executor.cores", "1").toInt
+    }
   }
 
   def getNextBatch(): Option[ColumnarBatch] = {
@@ -198,9 +220,9 @@ object CometExecIterator {
         taskMemoryPoolAddressMap.computeIfAbsent(
           taskAttemptId,
           _ => {
-            val memoryLimit = configMap.get("memory_limit").toLong
+            val memoryLimitPerTask = configMap.get("memory_limit_per_task").toLong
             val memoryFraction = configMap.get("memory_fraction").toDouble
-            val poolAddress = nativeLib.createTaskMemoryPool(memoryLimit, memoryFraction)
+            val poolAddress = nativeLib.createTaskMemoryPool(memoryLimitPerTask, memoryFraction)
             taskContext.addTaskCompletionListener[Unit] { _ =>
               nativeLib.releaseTaskMemoryPool(poolAddress)
               taskMemoryPoolAddressMap.remove(taskAttemptId)
