@@ -242,8 +242,12 @@ fn prepare_datafusion_session_context(
         rt_config = rt_config.with_memory_pool(memory_pool_arc);
     } else {
         // Use the memory pool from DF
-        if conf.contains_key("memory_limit") {
+        if conf.contains_key("memory_limit") || conf.contains_key("memory_limit_per_task") {
             let memory_limit = conf.get("memory_limit").unwrap().parse::<usize>()?;
+            let memory_limit_per_task = conf
+                .get("memory_limit_per_task")
+                .unwrap()
+                .parse::<usize>()?;
             let memory_fraction = conf
                 .get("memory_fraction")
                 .ok_or(CometError::Internal(
@@ -251,11 +255,8 @@ fn prepare_datafusion_session_context(
                 ))?
                 .parse::<f64>()?;
             let pool_size = (memory_limit as f64 * memory_fraction) as usize;
-
-            let default_memory_pool_type = String::from("none");
-            let memory_pool_type = conf
-                .get("memory_pool_type")
-                .unwrap_or(&default_memory_pool_type);
+            let pool_size_per_task = (memory_limit_per_task as f64 * memory_fraction) as usize;
+            let memory_pool_type = conf.get("memory_pool_type").unwrap();
             if memory_pool_type == "fair_spill_global" {
                 static GLOBAL_MEMORY_POOL_FAIR: OnceCell<Arc<dyn MemoryPool>> = OnceCell::new();
                 let memory_pool = GLOBAL_MEMORY_POOL_FAIR.get_or_init(|| {
@@ -276,11 +277,11 @@ fn prepare_datafusion_session_context(
                 rt_config = rt_config.with_memory_pool(Arc::clone(memory_pool));
             } else if memory_pool_type == "fair_spill" {
                 rt_config = rt_config.with_memory_pool(Arc::new(TrackConsumersPool::new(
-                    FairSpillPool::new(pool_size),
+                    FairSpillPool::new(pool_size_per_task),
                     NonZeroUsize::new(10).unwrap(),
                 )));
             } else if memory_pool_type == "greedy" {
-                rt_config = rt_config.with_memory_limit(memory_limit, memory_fraction);
+                rt_config = rt_config.with_memory_limit(memory_limit_per_task, memory_fraction);
             } else {
                 return Err(CometError::Config(format!(
                     "Unsupported memory pool type: {}",
@@ -642,13 +643,13 @@ pub extern "system" fn Java_org_apache_comet_Native_sortRowPartitionsNative(
 pub extern "system" fn Java_org_apache_comet_Native_createTaskMemoryPool(
     e: JNIEnv,
     _class: JClass,
-    memory_limit: jlong,
+    memory_limit_per_task: jlong,
     memory_fraction: jdouble,
 ) -> jlong {
     try_unwrap_or_throw(&e, |_| {
-        let pool_size = (memory_limit as f64 * memory_fraction) as usize;
+        let pool_size_per_task = (memory_limit_per_task as f64 * memory_fraction) as usize;
         let memory_pool = Box::new(Arc::new(TrackConsumersPool::new(
-            FairSpillPool::new(pool_size),
+            FairSpillPool::new(pool_size_per_task),
             NonZeroUsize::new(10).unwrap(),
         )));
         Ok(Box::into_raw(memory_pool) as jlong)
