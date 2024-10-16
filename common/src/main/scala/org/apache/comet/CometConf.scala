@@ -434,11 +434,10 @@ object CometConf extends ShimCometConf {
   val COMET_EXEC_MEMORY_POOL_TYPE: ConfigEntry[String] = conf("spark.comet.exec.memoryPool")
     .doc(
       "The type of memory pool to be used for Comet native execution. " +
-        "Available memory pool types are 'fair_spill_global', 'greedy_global', " +
-        "'fair_spill_shared', 'greedy' and 'fair_spill'. By default, this config is " +
-        "'fair_spill_shared'.")
+        "Available memory pool types are 'greedy', 'fair_spill', 'fair_spill_task_shared', " +
+        "'greedy_global' and 'fair_spill_global', By default, this config is 'greedy'.")
     .stringConf
-    .createWithDefault("fair_spill_shared")
+    .createWithDefault("greedy")
 
   val COMET_PARQUET_ENABLE_DIRECT_BUFFER: ConfigEntry[Boolean] = conf(
     "spark.comet.parquet.enable.directBuffer")

@@ -215,7 +215,7 @@ fn prepare_datafusion_session_context(
         let memory_pool = CometMemoryPool::new(comet_task_memory_manager);
         rt_config = rt_config.with_memory_pool(Arc::new(memory_pool));
     } else if memory_pool_address != 0 {
-        // Use the memory pool from Comet JVM side
+        // Use the task-shared memory pool allocated by `createTaskMemoryPool`
         let memory_pool = unsafe {
             let pool = memory_pool_address as *mut Arc<TrackConsumersPool<FairSpillPool>>;
             Box::from_raw(pool)

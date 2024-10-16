@@ -216,7 +216,7 @@ object CometExecIterator {
 
     val poolAddress =
       if (!configMap.get("use_unified_memory_manager").toBoolean && configMap.get(
-          "memory_pool_type") == "fair_spill_shared") {
+          "memory_pool_type") == "fair_spill_task_shared") {
         taskMemoryPoolAddressMap.computeIfAbsent(
           taskAttemptId,
           _ => {
