@@ -42,8 +42,6 @@ class Native extends NativeBase {
    * @param taskMemoryManager
    *   the task-level memory manager that is responsible for tracking memory usage across JVM and
    *   native side.
-   * @param memoryPoolAddress
-   *   the address of the task-level memory pool.
    * @return
    *   the address to native query plan.
    */
@@ -53,8 +51,7 @@ class Native extends NativeBase {
       iterators: Array[CometBatchIterator],
       plan: Array[Byte],
       metrics: CometMetricNode,
-      taskMemoryManager: CometTaskMemoryManager,
-      memoryPoolAddress: Long): Long
+      taskMemoryManager: CometTaskMemoryManager): Long
 
   /**
    * Execute a native query plan based on given input Arrow arrays.
@@ -126,22 +123,4 @@ class Native extends NativeBase {
    *   the size of the array.
    */
   @native def sortRowPartitionsNative(addr: Long, size: Long): Unit
-
-  /**
-   * Create a task-level datafusion memory pool.
-   * @param memoryLimit
-   *   the memory limit of the memory pool.
-   * @param memoryFraction
-   *   the fraction of reservable memory in the memory pool.
-   * @return
-   *   the address of the memory pool.
-   */
-  @native def createTaskMemoryPool(memoryLimit: Long, memoryFraction: Double): Long
-
-  /**
-   * Release the task-level datafusion memory pool.
-   * @param addr
-   *   the address of the memory pool.
-   */
-  @native def releaseTaskMemoryPool(addr: Long): Unit
 }

@@ -19,8 +19,6 @@
 
 package org.apache.comet
 
-import java.util.Map
-
 import org.apache.spark._
 import org.apache.spark.sql.comet.CometMetricNode
 import org.apache.spark.sql.vectorized._
@@ -57,8 +55,7 @@ class CometExecIterator(
   }.toArray
   private val plan = {
     val configs = createNativeConf
-    CometExecIterator.createPlan(
-      nativeLib,
+    nativeLib.createPlan(
       id,
       configs,
       cometBatchIterators,
@@ -100,6 +97,10 @@ class CometExecIterator(
     result.put("explain_native", String.valueOf(COMET_EXPLAIN_NATIVE_ENABLED.get()))
     result.put("worker_threads", String.valueOf(COMET_WORKER_THREADS.get()))
     result.put("blocking_threads", String.valueOf(COMET_BLOCKING_THREADS.get()))
+
+    val taskContext = TaskContext.get()
+    val taskAttemptId = taskContext.taskAttemptId()
+    result.put("task_attempt_id", String.valueOf(taskAttemptId))
 
     // Strip mandatory prefix spark. which is not required for DataFusion session params
     conf.getAll.foreach {
@@ -197,49 +198,5 @@ class CometExecIterator(
       // allocator.close()
       closed = true
     }
-  }
-}
-
-object CometExecIterator {
-  private val taskMemoryPoolAddressMap = new java.util.concurrent.ConcurrentHashMap[Long, Long]()
-
-  private def createPlan(
-      nativeLib: Native,
-      id: Long,
-      configMap: Map[String, String],
-      iterators: Array[CometBatchIterator],
-      protobufQueryPlan: Array[Byte],
-      metrics: CometMetricNode,
-      taskMemoryManager: CometTaskMemoryManager): Long = {
-    val taskContext = TaskContext.get()
-    val taskAttemptId = taskContext.taskAttemptId()
-
-    val poolAddress =
-      if (!configMap.get("use_unified_memory_manager").toBoolean && configMap.get(
-          "memory_pool_type") == "fair_spill_task_shared") {
-        taskMemoryPoolAddressMap.computeIfAbsent(
-          taskAttemptId,
-          _ => {
-            val memoryLimitPerTask = configMap.get("memory_limit_per_task").toLong
-            val memoryFraction = configMap.get("memory_fraction").toDouble
-            val poolAddress = nativeLib.createTaskMemoryPool(memoryLimitPerTask, memoryFraction)
-            taskContext.addTaskCompletionListener[Unit] { _ =>
-              nativeLib.releaseTaskMemoryPool(poolAddress)
-              taskMemoryPoolAddressMap.remove(taskAttemptId)
-            }
-            poolAddress
-          })
-      } else {
-        0
-      }
-
-    nativeLib.createPlan(
-      id,
-      configMap,
-      iterators,
-      protobufQueryPlan,
-      metrics,
-      taskMemoryManager,
-      poolAddress)
   }
 }
