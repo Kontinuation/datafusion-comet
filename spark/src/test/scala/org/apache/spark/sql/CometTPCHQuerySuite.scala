@@ -53,7 +53,6 @@ import org.apache.comet.shims.ShimCometTPCHQuerySuite
 class CometTPCHQuerySuite extends QueryTest with TPCBase with ShimCometTPCHQuerySuite {
 
   private val tpchDataPath = sys.env.get("SPARK_TPCH_DATA")
-  private val useOffHeapMemory = sys.env.get("USE_OFFHEAP_MEMORY")
 
   val tpchQueries: Seq[String] = Seq(
     "q1",
@@ -92,11 +91,8 @@ class CometTPCHQuerySuite extends QueryTest with TPCBase with ShimCometTPCHQuery
     conf.set(CometConf.COMET_EXEC_ENABLED.key, "true")
     conf.set(CometConf.COMET_EXEC_SHUFFLE_ENABLED.key, "true")
     conf.set(CometConf.COMET_SHUFFLE_MODE.key, "jvm")
-    if (useOffHeapMemory.getOrElse("false").toBoolean) {
-      conf.set(MEMORY_OFFHEAP_ENABLED.key, "true")
-      conf.set(MEMORY_OFFHEAP_SIZE.key, "2g")
-    }
-    conf
+    conf.set(MEMORY_OFFHEAP_ENABLED.key, "true")
+    conf.set(MEMORY_OFFHEAP_SIZE.key, "2g")
   }
 
   protected override def createSparkSession: TestSparkSession = {

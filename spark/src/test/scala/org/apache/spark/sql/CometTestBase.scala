@@ -64,8 +64,6 @@ abstract class CometTestBase
   protected val shuffleManager: String =
     "org.apache.spark.sql.comet.execution.shuffle.CometShuffleManager"
 
-  private val useOffHeapMemory = sys.env.get("USE_OFFHEAP_MEMORY")
-
   protected def sparkConf: SparkConf = {
     val conf = new SparkConf()
     conf.set("spark.hadoop.fs.file.impl", classOf[DebugFilesystem].getName)
@@ -73,10 +71,8 @@ abstract class CometTestBase
     conf.set(SQLConf.SHUFFLE_PARTITIONS, 10) // reduce parallelism in tests
     conf.set(SQLConf.ANSI_ENABLED.key, "false")
     conf.set(SHUFFLE_MANAGER, shuffleManager)
-    if (useOffHeapMemory.getOrElse("false").toBoolean) {
-      conf.set(MEMORY_OFFHEAP_ENABLED.key, "true")
-      conf.set(MEMORY_OFFHEAP_SIZE.key, "2g")
-    }
+    conf.set(MEMORY_OFFHEAP_ENABLED.key, "true")
+    conf.set(MEMORY_OFFHEAP_SIZE.key, "2g")
     conf.set(SQLConf.AUTO_BROADCASTJOIN_THRESHOLD.key, "1g")
     conf.set(SQLConf.ADAPTIVE_AUTO_BROADCASTJOIN_THRESHOLD.key, "1g")
     conf.set(CometConf.COMET_ENABLED.key, "true")
