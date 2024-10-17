@@ -103,6 +103,7 @@ enum MemoryPoolType {
     Unified,
     Greedy,
     FairSpill,
+    GreedyTaskShared,
     FairSpillTaskShared,
     GreedyGlobal,
     FairSpillGlobal,
@@ -317,6 +318,9 @@ fn parse_memory_pool_config(conf: &HashMap<String, String>) -> CometResult<Memor
                 "fair_spill_task_shared" => {
                     MemoryPoolConfig::new(MemoryPoolType::FairSpillTaskShared, pool_size_per_task?)
                 }
+                "greedy_task_shared" => {
+                    MemoryPoolConfig::new(MemoryPoolType::GreedyTaskShared, pool_size_per_task?)
+                }
                 "fair_spill_global" => {
                     MemoryPoolConfig::new(MemoryPoolType::FairSpillGlobal, pool_size)
                 }
@@ -378,14 +382,23 @@ fn create_memory_pool(
             });
             Some(Arc::clone(memory_pool))
         }
-        MemoryPoolType::FairSpillTaskShared => {
+        MemoryPoolType::GreedyTaskShared | MemoryPoolType::FairSpillTaskShared => {
             let mut memory_pool_map = TASK_SHARED_MEMORY_POOLS.lock().unwrap();
             let per_task_memory_pool =
                 memory_pool_map.entry(task_attempt_id).or_insert_with(|| {
-                    PerTaskMemoryPool::new(Arc::new(TrackConsumersPool::new(
-                        FairSpillPool::new(memory_pool_config.pool_size),
-                        NonZeroUsize::new(10).unwrap(),
-                    )))
+                    let pool: Arc<dyn MemoryPool> =
+                        if memory_pool_config.pool_type == MemoryPoolType::GreedyTaskShared {
+                            Arc::new(TrackConsumersPool::new(
+                                GreedyMemoryPool::new(memory_pool_config.pool_size),
+                                NonZeroUsize::new(10).unwrap(),
+                            ))
+                        } else {
+                            Arc::new(TrackConsumersPool::new(
+                                FairSpillPool::new(memory_pool_config.pool_size),
+                                NonZeroUsize::new(10).unwrap(),
+                            ))
+                        };
+                    PerTaskMemoryPool::new(pool)
                 });
             per_task_memory_pool.num_plans += 1;
             Some(Arc::clone(&per_task_memory_pool.memory_pool))
