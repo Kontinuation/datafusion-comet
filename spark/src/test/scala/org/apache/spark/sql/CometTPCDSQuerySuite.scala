@@ -187,10 +187,10 @@ class CometTPCDSQuerySuite
     conf.set(CometConf.COMET_EXEC_ENABLED.key, "true")
     conf.set(CometConf.COMET_NATIVE_SCAN_ENABLED.key, "true")
     conf.set(CometConf.COMET_EXEC_SHUFFLE_ENABLED.key, "true")
-    conf.set(CometConf.COMET_MEMORY_OVERHEAD.key, "8g")
+    conf.set(CometConf.COMET_MEMORY_OVERHEAD.key, "4g")
     conf.set("spark.sql.adaptive.coalescePartitions.enabled", "true")
     conf.set(MEMORY_OFFHEAP_ENABLED.key, "true")
-    conf.set(MEMORY_OFFHEAP_SIZE.key, "8g")
+    conf.set(MEMORY_OFFHEAP_SIZE.key, "4g")
     conf
   }
 
