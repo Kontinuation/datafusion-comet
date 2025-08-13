@@ -121,31 +121,8 @@ case class CometBroadcastExchangeExec(
         setJobGroupOrTag(sparkContext, this)
         val beforeCollect = System.nanoTime()
 
-        val countsAndBytes = child match {
-          case c: CometPlan => CometExec.getByteArrayRdd(c).collect()
-          case AQEShuffleReadExec(s: ShuffleQueryStageExec, _)
-              if s.plan.isInstanceOf[CometPlan] =>
-            CometExec.getByteArrayRdd(s.plan.asInstanceOf[CometPlan]).collect()
-          case s: ShuffleQueryStageExec if s.plan.isInstanceOf[CometPlan] =>
-            CometExec.getByteArrayRdd(s.plan.asInstanceOf[CometPlan]).collect()
-          case ReusedExchangeExec(_, plan) if plan.isInstanceOf[CometPlan] =>
-            CometExec.getByteArrayRdd(plan.asInstanceOf[CometPlan]).collect()
-          case AQEShuffleReadExec(ShuffleQueryStageExec(_, ReusedExchangeExec(_, plan), _), _)
-              if plan.isInstanceOf[CometPlan] =>
-            CometExec.getByteArrayRdd(plan.asInstanceOf[CometPlan]).collect()
-          case ShuffleQueryStageExec(_, ReusedExchangeExec(_, plan), _)
-              if plan.isInstanceOf[CometPlan] =>
-            CometExec.getByteArrayRdd(plan.asInstanceOf[CometPlan]).collect()
-          case AQEShuffleReadExec(s: ShuffleQueryStageExec, _) =>
-            throw new CometRuntimeException(
-              "Child of CometBroadcastExchangeExec should be CometExec, " +
-                s"but got: ${s.plan.getClass}")
-          case _ =>
-            throw new CometRuntimeException(
-              "Child of CometBroadcastExchangeExec should be CometExec, " +
-                s"but got: ${child.getClass}")
-        }
-
+        CometBroadcastExchangeExec.validateChildPlan(child)
+        val countsAndBytes = CometExec.getByteArrayRdd(child).collect()
         val numRows = countsAndBytes.map(_._1).sum
         val input = countsAndBytes.iterator.map(countAndBytes => countAndBytes._2)
 
@@ -261,6 +238,29 @@ object CometBroadcastExchangeExec {
     ThreadUtils.newDaemonCachedThreadPool(
       "comet-broadcast-exchange",
       SQLConf.get.getConf(StaticSQLConf.BROADCAST_EXCHANGE_MAX_THREAD_THRESHOLD)))
+
+  // Make sure that the childPlan is a CometPlan or a compatible plan that can produce
+  // columnar batches containing Comet vectors.
+  private def validateChildPlan(childPlan: SparkPlan): Unit = {
+    childPlan match {
+      case _: CometPlan =>
+      case AQEShuffleReadExec(s: ShuffleQueryStageExec, _) if s.plan.isInstanceOf[CometPlan] =>
+      case s: ShuffleQueryStageExec if s.plan.isInstanceOf[CometPlan] =>
+      case ReusedExchangeExec(_, plan) if plan.isInstanceOf[CometPlan] =>
+      case AQEShuffleReadExec(ShuffleQueryStageExec(_, ReusedExchangeExec(_, plan), _), _)
+          if plan.isInstanceOf[CometPlan] =>
+      case ShuffleQueryStageExec(_, ReusedExchangeExec(_, plan), _)
+          if plan.isInstanceOf[CometPlan] =>
+      case AQEShuffleReadExec(s: ShuffleQueryStageExec, _) =>
+        throw new CometRuntimeException(
+          "Child of CometBroadcastExchangeExec should be CometExec, " +
+            s"but got: ${s.plan.getClass}")
+      case _ =>
+        throw new CometRuntimeException(
+          "Child of CometBroadcastExchangeExec should be CometExec, " +
+            s"but got: ${childPlan.getClass}")
+    }
+  }
 }
 
 /**

@@ -141,8 +141,8 @@ object CometExec {
   /**
    * Executes this Comet operator and serialized output ColumnarBatch into bytes.
    */
-  def getByteArrayRdd(cometPlan: CometPlan): RDD[(Long, ChunkedByteBuffer)] = {
-    cometPlan.executeColumnar().mapPartitionsInternal { iter =>
+  def getByteArrayRdd(sparkPlan: SparkPlan): RDD[(Long, ChunkedByteBuffer)] = {
+    sparkPlan.executeColumnar().mapPartitionsInternal { iter =>
       Utils.serializeBatches(iter)
     }
   }
