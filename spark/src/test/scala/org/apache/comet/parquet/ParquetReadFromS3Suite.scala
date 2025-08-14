@@ -103,6 +103,11 @@ class ParquetReadFromS3Suite extends CometTestBase with AdaptiveSparkPlanHelper 
     df.write.format("parquet").mode(SaveMode.Overwrite).save(filePath)
   }
 
+  private def writePartitionedParquetFile(filePath: String): Unit = {
+    val df = spark.range(0, 1000).selectExpr("id", "id % 10 as p")
+    df.write.format("parquet").partitionBy("p").mode(SaveMode.Overwrite).save(filePath)
+  }
+
   private def assertCometScan(df: DataFrame): Unit = {
     val scans = collect(df.queryExecution.executedPlan) {
       case p: CometScanExec => p
@@ -120,9 +125,18 @@ class ParquetReadFromS3Suite extends CometTestBase with AdaptiveSparkPlanHelper 
     assert(df.first().getLong(0) == 499500)
   }
 
+  test("read partitioned parquet file from MinIO") {
+    val testFilePath = s"s3a://$testBucketName/data/test-partitioned-file.parquet"
+    writePartitionedParquetFile(testFilePath)
+
+    val df = spark.read.format("parquet").load(testFilePath).agg(sum(col("id")))
+    assertCometScan(df)
+    assert(df.first().getLong(0) == 499500)
+  }
+
   test("read parquet file from MinIO with URL escape sequences in path") {
-    // Path with '%20' which is a URL escape for space
-    val testFilePath = s"s3a://$testBucketName/data/test%20file.parquet"
+    // Path with '%23' and '%20' which are URL escape sequences for '#' and ' '
+    val testFilePath = s"s3a://$testBucketName/data/Brand%2321/test%20file.parquet"
     writeTestParquetFile(testFilePath)
 
     val df = spark.read.format("parquet").load(testFilePath).agg(sum(col("id")))
